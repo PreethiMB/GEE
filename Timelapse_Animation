@@ -1,0 +1,111 @@
+//This script creates time series animation using Sentinel-2 to visualize changes within Lake Tahoe 
+//** A short story about this project: 
+//I visited Lake Tahoe (Nevada, The United States) during the last week of November 2021. Just ten days after my visit, there was heavy snowfall in this region that broke the record reaching 193.7 inches after 50 years. 
+//This made me curious to visualize the changes around this region after a snowfall I missed by a couple of days. I was motivated to create a video by comparing images from the start of fall (September) until January 31st, 
+//2022 which can display the changes spatially and temporally. This case study is about creating animation to visualize changes within a region using GEE**
+//Get GEE code link here: https://code.earthengine.google.com/c58993237824fad965104ee8eec82520
+
+//-------------------Part1 - access satellite image------------------------------------
+var s2 = ee.ImageCollection("COPERNICUS/S2_SR");
+
+ 
+//-------------------Part2-Filter by dates and geometry--------------------------------
+var startdate = "2021-09-01";
+var enddate = "2022-01-31";
+
+var dataset = s2.filterBounds(geometry2)
+                  .filterDate(startdate, enddate)
+                  .filterMetadata('MGRS_TILE', 'equals', '10SGJ')//to remove duplicates-ee.imagecollection.distinct can also be used
+                  // Pre-filter to get less cloudy granules.
+                 .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',2))
+                 //.map(addTS)
+                 //.map(maskS2clouds);
+                  
+    
+//----------------Part3-Visualise and add layer ----------------------------------------
+var visualization = {
+  min: 500,
+  max: 2000,
+  bands: ['B4', 'B3', 'B2'],
+};
+
+//Map.setCenter(83.277, 17.7009, 12);
+
+Map.addLayer(dataset.mean(), visualization, 'RGB');
+print('Dataset', dataset);
+
+
+//---------------Part4-Animation----------------------------------------------------------
+
+var visParams2 = {
+  min: 500,
+  max: 2000,
+  bands: ['B4', 'B3', 'B2'],
+};
+
+
+//----Adding time stamp to the final collection----
+var collection_ts = dataset.map(function(img){
+  var date = img.get('system:time_start');
+  var date2 = ee.Date(date);
+  return img.set('system_time_start', date2);
+});
+
+print('Collection_With_TS', collection_ts);
+
+
+Map.addLayer(collection_ts.first(), visParams2, 'collection_ts');
+Map.centerObject(geometry2);
+
+
+//---------------------Annotations--------------------------------------------------
+
+//Define arguments for animation function parameters.
+var videoArgs = {
+ dimensions: 600,
+ region: geometry2,
+ framesPerSecond: 1,
+ format:'gif',
+ maxPixels: 26214400,
+  //crs: 'EPSG:3857',
+};
+
+
+var text = require('users/gena/packages:text');
+var S2_comp =  collection_ts.map(function(image){
+  var start = ee.Date(image.get('system:time_start'));
+  var end = ee.Date(image.get('system:time_end'));
+  var label = start.format('YYYY-MM-dd');//.cat(' - ').cat(end.format('YYYY-MM-dd'));
+  
+  return image.visualize({
+    forceRgbOutput: true,
+    //palette: palettes.BrBG[9], //original palette was "000000", "fdbb84"
+    bands: ['B4', 'B3', 'B2'],
+    min: 440,
+    max: 2190
+  }).clip(geometry2).set({label: label}); 
+});
+
+// annotate
+var annotations = [
+  {
+    position: 'right', offset: '5%', margin: '20%', property: 'label', scale: 150
+  }
+]
+
+S2_comp = S2_comp.map(function(image) {
+  return text.annotateImage(image, {}, geometry2, annotations) // bounds, 
+});
+
+print(S2_comp.getVideoThumbURL(videoArgs));
+
+//----------Export if the thumbnail is rendered as a video, for 'GIF' format, it can be saved directly to the computer----
+//Export Video to drive
+Export.video.toDrive({
+  collection: S2_comp,
+  description: 'Tahoe_2021_22',
+  framesPerSecond: 1,
+  scale: 20,
+  //maxPixels:1e13,
+  region: geometry2
+});

@@ -1,3 +1,3 @@
 # GEE
-Google Earth Engine codes.
-This repository contains codes written in Google Earth Engine. 
+Google Earth Engine Javascript codes.
+This repository contains codes written in Google Earth Engine Javascript API. 

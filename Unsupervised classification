@@ -1,0 +1,95 @@
+//This script was return as part of a project that I was involved in previously. To assess the area initially, an unsupervised classification was 
+//run on the study area using landsat8 image collection. This gave me an rough idea of what the different classes in the area before I began further processing
+
+
+//***********************Unsupervised classification Pre- and Post-Grazing************************************
+//--------Select start and end dates----------
+
+//Pre-grazing period
+var start = '2013-05-01';
+var end = '2019-05-01';
+
+//Post-grazing period
+var start = '2020-05-01';
+var end = '2022-05-31';
+
+
+//---------Acquire the Landsat surface reflectance collection, filter it by geometry, dates and month----------
+var studyarea_pre = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+                        .filterBounds(geometry)
+                        .filterDate(start,end)
+                        .filter(ee.Filter.calendarRange(5,5,'month'));
+
+//change the variable name for post-grazing period 
+
+
+//-----------------------------Pre-processing Landsat data-----------------------------------------------------                     
+//Apply scale factors to the bands
+//Refer -> https://www.usgs.gov/faqs/how-do-i-use-a-scale-factor-landsat-level-2-science-products?qt-news_science_products=3#qt-news_science_products
+//brightness value to radiance value
+
+function applyscalefactors(studyarea_pre){
+  var opticalBands = studyarea_pre.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalbands = studyarea_pre.select('ST_B.*').multiply(0.00341802).add(149.0);
+  return studyarea_pre.addBands(opticalBands, null, true)
+              .addBands(thermalbands, null ,true);
+}
+
+//-------------------------Create a function to mask clouds-----------------------------------------------
+//In this collection of L8 (which has superseded the collection LANDSAT/LC08/C01/T1_SR,
+// Bits for cloud and cloudshadow are 3 and 4 which were 5 and 3 in the previous collection)
+
+function maskL8sr(imagecollection){
+  var cloudshadowBitMask = 1 << 4;
+  var cloudBitMask = 1 << 3;
+  
+  //Get the QA_PIXEL band 
+  var qa = imagecollection.select('QA_PIXEL')
+  
+  //Mask the bits - both flags should be set to zero indicating clear conditions
+  var mask = qa.bitwiseAnd(cloudshadowBitMask).eq(0)
+            .and(qa.bitwiseAnd(cloudBitMask).eq(0));
+  return imagecollection.updateMask(mask)
+        .select("SR_B[0-7]*")
+        .copyProperties(imagecollection, ["system:time_start"]);
+         
+}
+
+//Update mask
+var studyarea_pre_edited=studyarea_pre.map(applyscalefactors).map(maskL8sr).median();
+                        
+Map.addLayer(geometry, {color: 'purple'}, 'FeatureCollection');
+var visTrueColor = {bands: ["SR_B4", "SR_B3", "SR_B2"], max: 0.5, min: 0}
+Map.addLayer(studyarea_pre_edited,visTrueColor, "studyarea_preTreatment")
+print(studyarea_pre_edited);
+
+
+//---------------------------Make the training dataset and perform classification---------------------------
+//Make training dataset
+var training = studyarea_pre_edited.sample({
+  region: geometry,
+  scale: 30,
+  numPixels: 1000   
+});
+
+print(training,'training');
+
+// form a clusterer and train it.
+var clusterer = ee.Clusterer.wekaKMeans(9).train(training);
+ 
+// Cluster the input using the trained clusterer.
+var result = studyarea_pre_edited.cluster(clusterer);
+
+// Display the clusters with random colors.
+Map.addLayer(result.randomVisualizer(), {}, 'clusters');
+
+
+
+ //--------------------------Export the classified map to drive------------------------------------
+
+ Export.image.toDrive({
+       image: result,
+       description: 'Unsup_AG',
+       scale: 30,
+       region: geometry
+     });

@@ -1,0 +1,91 @@
+//This is a script to visualise a GIF of land surface temperature changes over a three year period
+//This has used admin shapfile from Laos amd a watershed shapefile from laos
+
+//----------------------Display laos admin from shapefile--------------------------------
+var laosadmin;
+Map.addLayer(laosadmin, {color: 'green'}, 'laosadmin');
+
+
+//-------------------import image colllection-----------------------------------------
+var lcCol = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR');
+
+//------------------Step 1: Year 2019------------------------------------------------
+//Filter image by date and region of interest
+var image2019 = lcCol.filterDate('2019-01-01','2019-03-01').filterBounds(laoswshed).mosaic();
+
+//Convert the brightness temperature (Kelvin 0.1) to Celsius
+var tempC2019 = image2019.select("B10")
+.multiply(0.1)
+.subtract(273.5)
+.clip(laoswshed);
+print(tempC2019);
+Map.addLayer(tempC2019, {min:0, max:35, palette: ['lightgreen','yellow','red']},'Temp');
+
+//-------------------Step 2: Year 2017-------------------------------------
+//Filter image by date and region of interest
+var image2017 = lcCol.filterDate('2017-01-01','2017-03-01').filterBounds(laoswshed).mosaic();
+
+//Convert the brightness temperature (Kelvin 0.1) to Celsius 
+var tempC2017 = image2017.select("B10")
+.multiply(0.1)
+.subtract(273.5)
+.clip(laoswshed);
+print(tempC2017);
+Map.addLayer(tempC2017, {min:0, max:35, palette: ['lightgreen','yellow','red']},'Temp');
+
+
+//-------------------Step 3: Year 2015------------------------------------------
+//Filter image by date and region of interest
+var image2015 = lcCol.filterDate('2015-01-01','2015-03-01').filterBounds(laoswshed).mosaic();
+
+//Convert the brightness temperature (Kelvin 0.1) to Celsius 
+var tempC2015 = image2015.select("B10")
+.multiply(0.1)
+.subtract(273.5)
+.clip(laoswshed);
+print(tempC2015);
+Map.addLayer(tempC2015, {min:0, max:35, palette: ['lightgreen','yellow','red']},'Temp');
+
+//-------------------Display watershed area---------------------------------
+var styling = {color: 'red', fillColor: '00000000'};
+Map.addLayer(laoswshed.style(styling));
+Map.centerObject(tempC2015);
+
+var tempCol = ee.ImageCollection([tempC2015,tempC2017,tempC2019])
+print(tempCol)
+
+var visArgs = {
+  min:0,
+  max: 35.0,
+  palette: ['lightgreen','yellow','red']
+};
+
+//-------------------- Convert each image to an RGB visualization image by mapping the visualize----------------------
+// function over the image collection using the arguments defined previously.
+var tempColVis = tempCol.map(function(img) {
+  return img.visualize(visArgs);
+});
+
+// Define GIF visualization arguments.
+var gifParams = {
+  'region': laoswshed.geometry().bounds(),
+  'dimensions': 600,
+  //'crs': 'EPSG:4678',
+  'framesPerSecond': 10,
+  'format': 'gif'
+};
+
+// ----------------Print the GIF URL to the console------------------
+print(tempColVis.getVideoThumbURL(gifParams));
+
+// Render the GIF animation in the console.
+print(ui.Thumbnail(tempColVis, gifParams));
+
+//---------------------Export the image to drive--------------------
+Export.image.toDrive({
+   image: gifParams,
+   description: 'maxPixelsExample',
+   scale: 30,
+   region: laoswshed,
+   maxPixels: 1e9
+ });

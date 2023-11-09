@@ -1,0 +1,114 @@
+///--------Get Landsat-8 image, filter dates, path, row and months bound to geomtry-----
+
+var visTrueColor = {bands: ["SR_B4","SR_B3","SR_B2"], max:25000, min:5000} 
+var start = '2019-03-01';
+var end = '2019-07-31'; 
+var SWMA_ID = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+    .filterMetadata('WRS_ROW', 'equals', 30)
+.filterMetadata('WRS_PATH', 'equals', 39)
+  .filterDate(start, end)
+  .filter(ee.Filter.calendarRange(3,7,'month'))
+  .filterBounds(geometry); // Sterling is the polygon feature over the WMA
+  Map.addLayer(SWMA_ID,visTrueColor,"Sterling")
+  print(SWMA_ID)
+Map.addLayer(geometry, {color: 'FF0000'}, 'geodesic polygon');
+
+ function maskL8sr(imagecollection){
+  var cloudshadowBitMask = 1 << 4;
+  var cloudBitMask = 1 << 3;
+  
+  //Get the QA_PIXEL band 
+  var qa = imagecollection.select('QA_PIXEL')
+  
+  //Mask the bits - both flags should be set to zero indicating clear conditions
+  var mask = qa.bitwiseAnd(cloudshadowBitMask).eq(0)
+            .and(qa.bitwiseAnd(cloudBitMask).eq(0));
+  return imagecollection.updateMask(mask)
+        .select("SR_B[0-7]*")
+        .copyProperties(imagecollection, ["system:time_start"]);
+         
+}
+
+var swma = SWMA_ID.map(maskL8sr);
+Map.addLayer(swma,visTrueColor,"masked");
+var sterlingWMA = ee.ImageCollection(swma).toList(999); // create list of images collected in series
+var sterlingWMA_first = ee.Image(ee.List(sterlingWMA).get(2)); //pull individual image to variable, note index 0 is the first image Map.addLayer(sterlingWMA_first,visTrueColor,"Sterling_singleImage") //print single image to map print('single image',sterlingWMA_first) // single image info
+
+Map.addLayer(sterlingWMA_first, visTrueColor, "Sterling_singleimage");
+print('single image', sterlingWMA_first);
+
+
+// //---Create function for NDVI------------------------------------------------------
+
+
+var addNDVI = function(image) {
+  var ndvi = image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
+  return image.addBands(ndvi);
+};
+
+
+
+// //-----Create function for NDWI--------------------------------------------------------
+
+var addNDWI = function(image) {
+  var ndwi = image.normalizedDifference(['SR_B3', 'SR_B5']).rename('NDWI');
+  return image.addBands(ndwi);
+};
+
+
+
+// ///Add the functions to the image collection-----------------------------------
+var withindices = SWMA_ID.map(addNDVI).map(addNDWI);
+print(withindices);
+
+var ndviimage = withindices.select('NDVI');
+print(ndviimage,'NDVIImage');
+var NDVIVisParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
+Map.addLayer(ndviimage, NDVIVisParams, 'NDVI Image');
+
+var ndwiimage = withindices.select('NDWI');
+print(ndwiimage, 'NDWIImage');
+var NDWIVisParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
+Map.addLayer(ndwiimage, NDWIVisParams, 'NDWI Image');
+
+// //--------Export image collection-----------------------------------------------
+
+// var output_folder_ndvi = 'gee_export_ndvi';
+// var output_folder_ndwi = 'gee_export_ndwi';
+
+// // Export NDVI collection image to Drive
+// var batch = require('users/fitoprincipe/geetools:batch')
+// batch.Download.ImageCollection.toDrive(
+//   ndviimage,
+//   output_folder_ndvi,
+//   {
+//     name: '{id}_ndvi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
+//     // dateFormat: 'yyyy-MM-dd', // Default
+//     scale: 30,
+//     maxPixels: 1e13,
+//     region: geometry, // rmnp_boundary,
+//     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
+//                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
+//   }
+// );
+
+
+// // Export NDWI collection image to Drive
+// var batch = require('users/fitoprincipe/geetools:batch')
+// batch.Download.ImageCollection.toDrive(
+//   ndwiimage,
+//   output_folder_ndwi,
+//   {
+//     name: '{id}_ndwi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
+//     // dateFormat: 'yyyy-MM-dd', // Default
+//     scale: 30,
+//     maxPixels: 1e13,
+//     region: geometry, // rmnp_boundary,
+//     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
+//                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
+//   }
+// );
+
+
+
+

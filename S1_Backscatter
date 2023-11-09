@@ -1,0 +1,215 @@
+//This is a script to generate mean backscatter image from Sentinel-1
+//This was performed on a county of Ireland - a county boundary shapefile was used to define geometry. You can define geometry
+//by importing your own shapefile or by drawing on the code editor.
+//The script was written along with a team mate - Calvin Mccoy who was a brilliant coder and I learnt a lot from him
+
+
+//---------------Import the Sentinel-1 image collection------------------------
+
+var S1 = ee.ImageCollection('COPERNICUS/S1_GRD');
+
+//--------------Get the specific county from the county boundary shapefile and add the county layer------------
+//In the case of uploading or drawing your own geometry, use the usual method of assigning the geometry variable
+
+var county = table.filter(ee.Filter.eq('NAME_TAG', 'Carlow'))
+print("County: ", county);
+Map.addLayer(county);
+
+//------------------Set start and end dates to filter the data ---------------------------
+
+var S1_start_date = '2017-01-01';
+var S1_end_date = '2017-12-31';
+
+//--------------Filter the S1 data by polygon bounds for all images in 2017 and select the S1 instrument mode---------
+var S1Col = S1.filterBounds(county).filterDate(S1_start_date, S1_end_date)
+.filter(ee.Filter.eq('instrumentMode', 'IW'));
+
+print('Number of S1 Images: ', S1Col.size());
+
+var clip_s1 = function(img){
+  return img.clip(county);
+}
+
+// Run the clip function over the S1 image collections:
+var S1clipped = S1Col.map(clip_s1)
+print(S1clipped)
+
+//-------------- Create a function to remove ugly edges-------------------------
+function maskEdge(img) {
+  var mask = img.select(0).unitScale(-25, 5).multiply(255).toByte().connectedComponents(ee.Kernel.rectangle(1,1), 100);
+  return img.updateMask(mask.select(0));  
+}
+
+//  Apply the function to the image collection
+var s1 = S1clipped.map(maskEdge);
+
+// ------------------Create a function to add a time stamp band to each image------------
+var addTS = function(image){
+  var ts = image.metadata('system:time_start')
+  return image.addBands(ts)
+};
+
+// Create a time stamp band for each image: 
+var timeStamped = s1.map(addTS);
+print(timeStamped)
+
+//Sort the image according to the time stamp
+var S1ts= timeStamped.sort('system:time_start');
+print('Time Sorted Imagery: ', S1ts.limit(20));
+
+//------------------Reduce the image collection to 13 four week mean values--------------
+// First, create a function to convert all images to natural values
+// from dB:
+function toNatural(image){
+    return ee.Image(10.0).pow(image.select('..').divide(10.0))
+  .copyProperties(image, ['system:time_start'])
+}
+
+// Run the function across the image collection:
+var imageColNatural = S1ts.map(toNatural);
+
+// Create a sequence of dates, each 7 days apart:
+var step = 28
+
+var days = ee.List.sequence(0, ee.Date(S1_end_date).difference(ee.Date(S1_start_date), 'day'), step)
+.map(function(d) { return ee.Date(S1_start_date).advance(d, "day") });
+
+//------------ Create a list containing 13 lists, each with a start date and end------------------
+// date for a 28 day period:
+// Slice() takes two arguments. Each refers to an index position, the 
+// start index and end index. Slice subsets the list between these two 
+// indexes. In this example, we take everything between the first index (0)
+// and the second last index (-1).
+// Zip() pairs the elements of two lists to create a list of two-element 
+// lists. In this case, it zips the first list (days) to a second list (days)
+// which has been subset (sliced) between the second index (1) and the last (
+// which is not specified but assumed by default).
+// This creates a list of lists, with each subset list having two elements:
+// a start date and end date, 28 days apart:
+
+var dates = days.slice(0,-1).zip(days.slice(1));
+
+//print('Dates List: ', dates);
+
+
+// ----------Create a function to get the mean backscatter value for each pixel averaged for each 4 week period-------
+// The image collection is filtered by date. The start date is specified
+// as the first element of a sub-list (ee.List(x).get(0)), and the end date
+// is specified as the second element of a sub-list (ee.List(x).get(1)).
+// Then a mean reducer is applied to this filtered image collection.
+var mean = function(x){
+  var temp_collection = imageColNatural.filterDate(ee.List(x).get(0),
+    ee.List(x).get(1)).mean().select(['VV', 'VH'])
+  return temp_collection
+};
+
+// Apply the function over the imageCollection, with dates as the input
+// parameter:
+var s1res = dates.map(mean);
+
+//print('Weekly Composite Images: ', s1res);
+
+
+//------------ Create a function to add a new band: VV divided by VH------------
+var VVdivVH = function(x){
+  var img = ee.Image(x)
+  var vv_div_vh = img.select('VV').divide(img.select('VH')).rename('VV_VH')
+  var new_image = img.addBands(vv_div_vh)
+  return new_image
+}
+
+// Run the function over all the images:
+var s1_three_bands = s1res.map(VVdivVH);
+
+//print('Three Band Images: ', s1_three_bands);
+
+
+//--------------- Run a for loop to rename the bands-----------------------
+// First, create an empty list called 'renamed'.
+// Second, create a ee.List.sequence object to create a list of numbers from
+// 1 to 13 (for 13 weeks).
+// Next, set up the for loop. The first line creates a variable i which is 
+// set to zero. It then specifies that while i is less than the number of 
+// elements in the s1res list, keep adding one to i and carry out another
+// iteration.
+// The next line creates a variable called img and produces an ee.Image 
+// object from each element in the s1res list.
+// The next line creates a variable called img_renamed, and uses the function
+// 'rename()' to rename the three bands of each image. The first band starts
+// with 'VV_' and has the first element in the weeks lists concatenated onto
+// it. The first element in the weeks list has to be converted to an
+// ee.Number object so it can be changed to an integer using the int()
+// function (the ee.List.sequence object automatically stores numbers as 
+// decimals, not whole integers. This is a problem when we try to convert
+// to string). Then the number is converted to an ee.String object and 
+// concatenated onto the 'VV_' string.
+// Finally, the renamed variable, which is an empty list, is converted to
+// an ee.List object so that each img_renamed variable can be appended onto 
+// the list. The final output is a list of 13 images with 3 renamed bands
+// in each.
+
+var renamed = []
+var weeks = ee.List.sequence(1, 13, 1)
+for (var i = 0; i < s1_three_bands.size().getInfo(); i++){
+  var img = ee.Image(s1_three_bands.get(i))
+  var img_renamed = img.rename([ee.String('VV_').cat(ee.String(ee.Number(weeks.get(i)).int())), 
+  ee.String('VH_').cat(ee.String(ee.Number(weeks.get(i)).int())), 
+  ee.String('VV_VH_').cat(ee.String(ee.Number(weeks.get(i)).int()))])
+  var renamed = ee.List(renamed).add(img_renamed)
+}
+
+//print('Renamed Bands: ', renamed);
+
+
+//--------------------- Create a function to convert all images to dB------------------------
+var toDB = function (image) {
+  return ee.Image(image).log10().multiply(10.0);
+};
+
+// Apply this function to the s1_three_bands imagecollection:
+var s1resDB = ee.ImageCollection(renamed.map(toDB));
+
+//print('s1 weekly image collection: ', s1resDB);
+
+var reversed = ee.ImageCollection(s1resDB.toList(s1resDB.size()).reverse())
+//print('Reversed Image Order: ', reversed);
+
+// Create a function to build a stack for all images in the collection:
+var stack = function (i1, i2){
+  return ee.Image(i1).addBands(ee.Image(i2))
+};
+
+
+// Apply the function to the reversed list, using an iterate() method also.
+// This creates a single ee.Image object with n number of bands.
+// (as far as I can tell) iterate() takes two arguments. First, it takes
+// the (stack) function (which itself requires two parameters, i1 and i2), 
+// and then the second argument takes the first object in the
+// reversed list, and uses this as the input 'i1' of the stack function. 
+// The first part of the code before .iterate() determines all the objects 
+// which will be iterated over in the loop. In this case, they are all 
+// elements from index 1 to 12 (the slice() function creates a subset of
+// indices starting at index 1 in this case, and ending at the last index (
+// which is defined by default). This is taken as the input 'i2' of the stack
+// function:
+
+var s1stack = reversed.toList(reversed.size()).slice(1)
+.iterate(stack, reversed.toList(reversed.size()).get(0));
+
+//---------- Convert the s1stack to an ee.Image object---------------------
+var s1stack = ee.Image(s1stack);
+print('S1 Stack: ', s1stack);
+
+
+//--------------------Visualise some RGB combinations------------------------
+Map.centerObject(county, 13);
+Map.addLayer(s1stack, {min: -20, max: -5, 
+bands: ['VV_8', 'VV_9', 'VV_10']}, 'S1 RGB');
+
+Map.addLayer(s1stack.select(0), {min: -20, max: -5}, 'S1 VV_1');
+
+var bandNames = s1stack.bandNames();
+
+print(bandNames) 
+
+

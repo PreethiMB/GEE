@@ -2,6 +2,7 @@
 //This was performed on a county of Ireland - a county boundary shapefile was used to define geometry. You can define geometry
 //by importing your own shapefile or by drawing on the code editor.
 //The script was written along with a team mate - Calvin Mccoy who was a brilliant coder and I learnt a lot from him
+//Get GEE path here: https://code.earthengine.google.com/c9599cbdc39c1a85aeff6b40caec981d
 
 
 //---------------Import the Sentinel-1 image collection------------------------

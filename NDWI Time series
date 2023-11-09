@@ -1,0 +1,198 @@
+//This is an independent project to map NDWI changes in California Bay Area using time series Landsat8
+//imagery. This includes a 8-year time series to visualise the NDWI content in this decade NDWI is strongly related to plant water content. High values of NDWI indicate hight water content in vegetation
+//and lower values indicate low water content in vegetation.
+//Objective: To create a GIF map of change in water body in Bay Area in 10 years - 2013 - 2021
+//Final product: A GIF image of time series
+//The approach includes calculating and mapping Normalized Difference Water Index (NDWI) for the mentioned years. 
+//NDWI = (NIR-SWIR)/(NIR+SWIR); For L8 = (B5-B6)/(B5+B6)
+//Just for reference:
+//NDVI = (NIR-Red)/(NIR+Red); For L8 = (B5-B4)/(B5+B4)
+//EVI = 2.5 * ((NIR - Red) / (NIR + 6 * Red – 7.5 * Blue + 1)); For L8 = 2.5 * ((B5 - B4) / (B5 + 6 * B4 – 7.5 * B2 + 1))
+//GEE path here: https://code.earthengine.google.com/4d8b2b3f4df5ef6cd380dcbbbef95879
+
+
+//-----------------------------Data import, clip to study area, cloud mask and filter to date------------------------------------------------------
+/*Import Landsat8 imagery and clip the collection to studyarea, filter the images to summer months and the years.
+These are atmospherically corrected surface reflectance data*/
+
+var imagecollection = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+                      //.filterDate('2014-05-01', '2021-09-30')
+                      .filterBounds(studyarea);
+
+//Apply scale factors to the bands
+//Refer -> https://www.usgs.gov/faqs/how-do-i-use-a-scale-factor-landsat-level-2-science-products?qt-news_science_products=3#qt-news_science_products
+
+function applyscalefactors(image){
+  var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
+  var thermalbands = image.select('ST_B.*').multiply(0.00341802).add(149.0);
+  return image.addBands(opticalBands, null, true)
+              .addBands(thermalbands, null ,true);
+}
+
+//Create a function to mask clouds
+//In this collection of L8 (which has superseded the collection LANDSAT/LC08/C01/T1_SR,
+// Bits for cloud and cloudshadow are 3 and 4 which were 5 and 3 in the previous collection)
+
+function maskL8sr(imagecollection){
+  var cloudshadowBitMask = 1 << 4;
+  var cloudBitMask = 1 << 3;
+  
+  //Get the QA_PIXEL band 
+  var qa = imagecollection.select('QA_PIXEL')
+  
+  //Mask the bits - both flags should be set to zero indicating clear conditions
+  var mask = qa.bitwiseAnd(cloudshadowBitMask).eq(0)
+             .and(qa.bitwiseAnd(cloudBitMask).eq(0));
+  return imagecollection.updateMask(mask)
+         .select("SR_B[0-7]*")
+         .copyProperties(imagecollection, ["system:time_start"]);
+         
+}
+  
+/*Make a list of years, for each year filter summer images, mask clouds, apply scale factors,
+ and reduce by median. Important to add system:time_start */
+var steplist = ee.List.sequence(2014,2020)
+var filterCollection = steplist.map(function(year){
+  var startdate = ee.Date.fromYMD(year,5,1);
+  var enddate = ee.Date.fromYMD(year,9,15);
+ var composite_i = imagecollection.filterDate(startdate, enddate)
+                   .map(applyscalefactors)
+                   .map(maskL8sr)
+                   .median()
+                   .set('system:time_start', startdate);
+  return composite_i;
+});
+
+var yearlycomposites = ee.ImageCollection(filterCollection);
+print(yearlycomposites, 'Masked, scaled and filtered composites');
+var visparams = {min: 0, max: 0.5, bands: ['SR_B4', 'SR_B3', 'SR_B2']};
+Map.addLayer(yearlycomposites, visparams, 'Composites');
+
+
+//-------------------------------Generate NDWI images---------------------------------------------------
+//Add NDWI to a function and apply
+//NDWI = (NIR-SWIR)/(NIR+SWIR); For L8 = (B5-B6)/(B5+B6)
+function ndwi(img){
+  var ndwiImg = img.select(['SR_B5', 'SR_B6'],['nir','swir']);
+  ndwiImg = ndwiImg.expression(
+    '(NIR-SWIR)/(NIR+SWIR)', {
+      'NIR': ndwiImg.select('nir'),
+      'SWIR': ndwiImg.select('swir')
+      }).rename('NDWI');
+      
+      return img.addBands(ndwiImg);
+}
+
+yearlycomposites = yearlycomposites.map(function(image){
+  return ndwi(image);
+});
+
+print(yearlycomposites, 'With NDWI as Band');
+
+
+//Get only the NDWI bands from each year - create image collection of yearly composites only with ndwi band
+var ndwicollection = yearlycomposites.select('NDWI');
+
+//Add the 7 ndwi maps for each year 2014-2020
+var y2014 = ndwicollection.filterDate('2014-01-01', '2014-12-31')
+    .first()
+    .clip(studyarea);
+    
+var y2015 = ndwicollection.filterDate('2015-01-01', '2015-12-31')
+    .first()
+    .clip(studyarea);
+
+var y2016 = ndwicollection.filterDate('2016-01-01', '2016-12-31')
+    .first()
+    .clip(studyarea);
+
+var y2017 = ndwicollection.filterDate('2017-01-01', '2017-12-31')
+    .first()
+    .clip(studyarea);
+    
+var y2018 = ndwicollection.filterDate('2018-01-01', '2018-12-31')
+    .first()
+    .clip(studyarea);
+
+var y2019 = ndwicollection.filterDate('2019-01-01', '2019-12-31')
+    .first()
+    .clip(studyarea);
+    
+var y2020 = ndwicollection.filterDate('2020-01-01', '2020-12-31')
+    .first()
+    .clip(studyarea);
+    
+print(y2020, '2020 Composite Image');
+
+var ndwiparams = {min: -1, max: 1, palette: ['white', 'green', 'blue']};
+
+Map.addLayer(y2014, ndwiparams, '2014 NDWI');
+Map.addLayer(y2015, ndwiparams, '2015 NDWI');
+Map.addLayer(y2016, ndwiparams, '2016 NDWI');
+Map.addLayer(y2017, ndwiparams, '2017 NDWI');
+Map.addLayer(y2018, ndwiparams, '2018 NDWI');
+Map.addLayer(y2019, ndwiparams, '2019 NDWI');
+Map.addLayer(y2020, ndwiparams, '2020 NDWI');
+Map.centerObject(y2020, 9);
+
+
+//Line chart of ndwi at different points
+var chart = ui.Chart.image.series({
+  imageCollection: ndwicollection.select('NDWI'),
+  region: roi,
+  scale: 10
+}). setOptions({title: 'Point 1: NDWI over time'});
+
+print(chart);
+
+var chart2 = ui.Chart.image.series({
+  imageCollection: ndwicollection.select('NDWI'),
+  region: roi2,
+  scale: 10
+}). setOptions({title: 'Point 2: NDWI over time'});
+
+print(chart2);
+
+//-------------------------------------Creating a Time Series GIF of NDWI maps----------------------------------------------------------------
+
+// Load package from Gena for adding text annotations. 
+//this is package made available by another scientist on github to visualise the gif images
+//So here, with each image property, the year will appear at the bottom
+var text = require('users/gena/packages:text');
+var yearNames = ee.List(['2014', '2015', '2016','2017',
+                           '2018','2019','2020']);
+var ndwiWithYear = ndwicollection.map(function(feat){
+    return feat.set('year', yearNames.getString(
+                      ee.Number.parse(feat.getString('system:index'))));
+});
+
+print(ndwiWithYear, 'year');
+
+// Define GIF visualization arguments.
+var gifParams = {
+  'region': area1,
+  'dimensions': 600,
+  'framesPerSecond': 2,//2 maps shown per second within the gif
+  'format': 'gif'
+};
+
+// Labeling your images.
+var annotations = [{
+  position: 'bottom',
+  offset: '10%',
+  margin: '20%',
+  property: 'year',
+  scale: 2000
+  }];
+
+// Mapping over the collection to annotate each image.
+// Note that the "annotateImage" is a function written by Gena
+var timeSeriesgif = ndwiWithYear.map(function(image) {
+  return text.annotateImage(image, ndwiparams, area1, annotations);
+});
+
+// Print the GIF URL to the console
+print(timeSeriesgif.getVideoThumbURL(gifParams));
+
+// Render the GIF animation in the console.
+print(ui.Thumbnail(timeSeriesgif, gifParams));

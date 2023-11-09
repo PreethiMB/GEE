@@ -1,0 +1,29 @@
+//-----------------------Get NICFI basemap and generate NDVI-----------------------------------
+//Planet provides high-resolution
+//mosaics through Norway's International Climate and Forests Initiative Satellite 
+//Data Program. You can apply to this program here -> https://www.planet.com/nicfi/
+//Get GEE path here: https://code.earthengine.google.com/86bbb27ee3cdcf3e5ad3ca087c9cdbc1
+
+//-----Load NICFI basemap------------------
+
+var nicfi = ee.ImageCollection("projects/planet-nicfi/assets/basemaps/asia");
+var basemap = nicfi.filter(ee.Filter.date('2020-01-01', '2020-12-01')).first();
+
+//Get date
+var date = ee.Date(basemap.get('system:time_start'));
+
+var vis = {"bands":["R","G","B"],"min":200,"max":3000,"gamma":2.0};
+Map.addLayer(basemap, vis, 'NICFI mosaic 2020');
+
+
+
+//Get NDVI
+Map.addLayer(
+    basemap.normalizedDifference(['N','R']).rename('NDVI').clip(geometry),
+    {min:-0.55,max:0.8,palette: [
+        '8bc4f9', 'c9995c', 'c7d270','8add60','097210'
+    ]}, 'NDVI', false);
+    
+    
+print(basemap);
+print('Timestamp:', date);  // ee.Date

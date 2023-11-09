@@ -2,6 +2,8 @@
 //Sentinel-1 collection is filteres by metadata properties (dual polarisation bands, modes, ascending and descending orbits)
 //Google developers document was referred to write the Sentinel-1 script
 
+//get GEE script path here: https://code.earthengine.google.com/75a4caf08b39ad69d55202fe5e87852c
+
 
 // Import geoemtry or draw geometry polygons in the code editor
 

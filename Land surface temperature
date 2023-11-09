@@ -1,5 +1,9 @@
 //This is a script to visualise a GIF of land surface temperature changes over a three year period
 //This has used admin shapfile from Laos amd a watershed shapefile from laos
+// Get GEE code path: https://code.earthengine.google.com/b0758480e18925a42235c1f55c8f6e96
+
+
+
 
 //----------------------Display laos admin from shapefile--------------------------------
 var laosadmin;

@@ -1,5 +1,7 @@
 // This is a script to display Sentinel-1 and Sentinel-2 images over the same study area
 //Sentinel-1 collection is filteres by metadata properties (dual polarisation bands, modes, ascending and descending orbits)
+//Google developers document was referred to write the Sentinel-1 script
+
 
 // Import geoemtry or draw geometry polygons in the code editor
 

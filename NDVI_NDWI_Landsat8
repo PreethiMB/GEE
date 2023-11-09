@@ -1,4 +1,9 @@
-///--------Get Landsat-8 image, filter dates, path, row and months bound to geomtry-----
+//This is a script to acquire Landsat-8 Surface Reflectance images, process them and generate Normalized Difference vegetation Index (NDVI) 
+//and Normalized Difference Water Index (NDWI) and export the collection to Google Drive
+
+//--------Get Landsat-8 image, filter dates, path, row and months bound to geometry-----
+//First step - import geometry or define a variable and assign geometry by providing bounding box.
+//In this script, a shapefile was imported into GEE code editor and used as geometry variable
 
 var visTrueColor = {bands: ["SR_B4","SR_B3","SR_B2"], max:25000, min:5000} 
 var start = '2019-03-01';
@@ -8,10 +13,13 @@ var SWMA_ID = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
 .filterMetadata('WRS_PATH', 'equals', 39)
   .filterDate(start, end)
   .filter(ee.Filter.calendarRange(3,7,'month'))
-  .filterBounds(geometry); // Sterling is the polygon feature over the WMA
-  Map.addLayer(SWMA_ID,visTrueColor,"Sterling")
+  .filterBounds(geometry); 
+  Map.addLayer(SWMA_ID,visTrueColor,"StudyArea")
   print(SWMA_ID)
 Map.addLayer(geometry, {color: 'FF0000'}, 'geodesic polygon');
+
+//--------------------Create a function to mask clouds and shadow---------------------
+//**This step is optional 
 
  function maskL8sr(imagecollection){
   var cloudshadowBitMask = 1 << 4;
@@ -29,16 +37,17 @@ Map.addLayer(geometry, {color: 'FF0000'}, 'geodesic polygon');
          
 }
 
+//-----------Apply the mask to the image collection--------------------
 var swma = SWMA_ID.map(maskL8sr);
 Map.addLayer(swma,visTrueColor,"masked");
-var sterlingWMA = ee.ImageCollection(swma).toList(999); // create list of images collected in series
-var sterlingWMA_first = ee.Image(ee.List(sterlingWMA).get(2)); //pull individual image to variable, note index 0 is the first image Map.addLayer(sterlingWMA_first,visTrueColor,"Sterling_singleImage") //print single image to map print('single image',sterlingWMA_first) // single image info
+var studyarea = ee.ImageCollection(swma).toList(999); // create list of images collected in series
+var studyarea_first = ee.Image(ee.List(studyarea).get(2)); //pull individual image to variable, note index 0 is the first image Map.addLayer(sterlingWMA_first,visTrueColor,"Sterling_singleImage") //print single image to map print('single image',sterlingWMA_first) // single image info
 
-Map.addLayer(sterlingWMA_first, visTrueColor, "Sterling_singleimage");
-print('single image', sterlingWMA_first);
+Map.addLayer(studyarea_first, visTrueColor, "SA_singleimage");
+print('single image', studyarea_first);
 
 
-// //---Create function for NDVI------------------------------------------------------
+//--------------Create function for NDVI------------------------------------------------------
 
 
 var addNDVI = function(image) {
@@ -48,7 +57,7 @@ var addNDVI = function(image) {
 
 
 
-// //-----Create function for NDWI--------------------------------------------------------
+//--------------Create function for NDWI--------------------------------------------------------
 
 var addNDWI = function(image) {
   var ndwi = image.normalizedDifference(['SR_B3', 'SR_B5']).rename('NDWI');
@@ -56,8 +65,9 @@ var addNDWI = function(image) {
 };
 
 
+//-----------------Add the functions to the image collection-----------------------------------
+//In this script the indices function has been applied to the original landsat8 image collection. Masking is skipped here
 
-// ///Add the functions to the image collection-----------------------------------
 var withindices = SWMA_ID.map(addNDVI).map(addNDWI);
 print(withindices);
 
@@ -71,43 +81,43 @@ print(ndwiimage, 'NDWIImage');
 var NDWIVisParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
 Map.addLayer(ndwiimage, NDWIVisParams, 'NDWI Image');
 
-// //--------Export image collection-----------------------------------------------
+//-----------------Export image collection-----------------------------------------------
 
-// var output_folder_ndvi = 'gee_export_ndvi';
-// var output_folder_ndwi = 'gee_export_ndwi';
+var output_folder_ndvi = 'gee_export_ndvi';
+var output_folder_ndwi = 'gee_export_ndwi';
 
-// // Export NDVI collection image to Drive
-// var batch = require('users/fitoprincipe/geetools:batch')
-// batch.Download.ImageCollection.toDrive(
-//   ndviimage,
-//   output_folder_ndvi,
-//   {
-//     name: '{id}_ndvi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
-//     // dateFormat: 'yyyy-MM-dd', // Default
-//     scale: 30,
-//     maxPixels: 1e13,
-//     region: geometry, // rmnp_boundary,
-//     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
-//                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
-//   }
-// );
+// Export NDVI collection image to Drive
+ var batch = require('users/fitoprincipe/geetools:batch')
+ batch.Download.ImageCollection.toDrive(
+   ndviimage,
+   output_folder_ndvi,
+   {
+     name: '{id}_ndvi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
+      dateFormat: 'yyyy-MM-dd', // Default
+     scale: 30,
+     maxPixels: 1e13,
+     region: geometry, 
+     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
+                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
+   }
+ );
 
 
-// // Export NDWI collection image to Drive
-// var batch = require('users/fitoprincipe/geetools:batch')
-// batch.Download.ImageCollection.toDrive(
-//   ndwiimage,
-//   output_folder_ndwi,
-//   {
-//     name: '{id}_ndwi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
-//     // dateFormat: 'yyyy-MM-dd', // Default
-//     scale: 30,
-//     maxPixels: 1e13,
-//     region: geometry, // rmnp_boundary,
-//     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
-//                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
-//   }
-// );
+ // Export NDWI collection image to Drive
+ var batch = require('users/fitoprincipe/geetools:batch')
+ batch.Download.ImageCollection.toDrive(
+   ndwiimage,
+   output_folder_ndwi,
+   {
+     name: '{id}_ndwi', // {id}, {system_date} and all other properties (e.g., {WRS_PATH})
+      dateFormat: 'yyyy-MM-dd', // Default
+     scale: 30,
+     maxPixels: 1e13,
+     region: geometry, // rmnp_boundary,
+     type: 'float' // 'float', 'byte', 'int', 'double', 'long', 'short', 'int8',
+                   // 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32'
+   }
+ );
 
 
 

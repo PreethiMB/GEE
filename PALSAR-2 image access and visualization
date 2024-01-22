@@ -1,0 +1,66 @@
+#This is a code to access PALSAR-2 ScanSAR image and visualize the histogram and images using the geemap feature
+
+#Step1: Import earth engine (ee), geemap and authenticate ee
+import ee
+import geemap
+ee.Authenticate()
+
+#Then initialze ee
+ee.Initialize()
+
+#Step2: DIsplay a map to draw an area of interest polygon
+Map=geemap.Map()
+Map
+
+#Step3: Draw a geometry polygon from the map tools to define your area of interest (AOI). After the polygon is drawn, import them using the line below
+Map.draw_features
+aoi=ee.FeatureCollection(Map.draw_features)
+
+#Step4: Import PALSAR-2 image collection and filter it to the AOI. Further, filter the collection according to your dates of preference - In this case, images for the
+#month of May 2020 have been chosen and a median is applied.
+collection = ee.ImageCollection('JAXA/ALOS/PALSAR-2/Level2_2/ScanSAR') \
+  .filterBounds(aoi)
+image = collection.filterDate('2020-05-01', '2020-06-01').median()
+
+#Select 'HV' band from the collection and display it on the Map
+Map.addLayer(image.select(['HV']), {'min': 0, 'max': 8000}, 'HV polarization')
+Map.centerObject(image)
+Map
+
+#Step5: Create new variables for HV and HH bands and print their band names 
+HVband = image.select('HV')
+bandNames = HVband.bandNames()
+print('Band names: ', bandNames.getInfo())
+
+HHband = image.select('HH')
+bandNames = HHband.bandNames()
+print('Band names: ', bandNames.getInfo())
+
+#Step6: Convert DN values to gamma nought in dB
+import numpy as np
+dbbandHV = ((HVband.multiply(HVband)).log10().multiply(10)).subtract(83.0)
+dbbandHH = ((HHband.multiply(HHband)).log10().multiply(10)).subtract(83.0)
+
+#Step7: Generate histograms - use geemap chart 
+source = dbbandHV
+region = aoi 
+my_sample = source.sample(region, 5000)
+property = 'HV'
+options = {
+    "title": 'Histogram for HV gamma nought in dB',
+    "xlabel": 'HV dB values',
+    "ylabel": 'Pixel count',
+    "colors": ['#1d6b99'],
+}
+import geemap.chart as chart
+chart.feature_histogram(my_sample, property, **options)
+
+#DO the same for HH and display and visualize histograms
+
+#Step8: To visualize and analysis the HV and HH images, display them on the map and do the study
+Map.addLayer(dbbandHV, {'min': -24, 'max': -8}, 'HV polarization')
+Map.addLayer(dbbandHH, {'min': -16, 'max': -5}, 'HV polarization')
+Map
+
+
+
